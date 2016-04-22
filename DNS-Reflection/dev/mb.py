@@ -10,11 +10,31 @@ def fprint(x):
 class PacketHandler:
         
     def __init__(self, intf_list, conn_intf_dict, ip_map):
+        
+        # Fields passed as arguments
         self.intf_list = intf_list
         self.conn_intf_dict = conn_intf_dict
         self.ip_map = ip_map
-		
         
+        # Global dict mapping hosts to query IDs
+        self.queries = {}
+
+        # Lock for queries dict
+        self.queries_lock = threading.Lock()
+
+        # Global dict mapping hosts to invalid query counts
+        self.counts = {}
+        
+        # Lock for counts dict
+        self.counts_lock = threading.Lock()
+
+        # Populate queries and counts dicts
+        for ip_list in ip_map.vals():
+            for ip in ip_list:
+                self.queries[ip] = []
+                self.counts[ip] = 0
+        
+		
     def start(self):
         for (in_intf, out_intf) in self.intf_list:
             t = threading.Thread(target = self.sniff, args = (in_intf, out_intf))
@@ -48,11 +68,43 @@ class PacketHandler:
                 sendp(pkt, iface=in_intf, verbose = 0)
             return
 	
-	    # TODO: process the packet beforing sending it out
+        # TODO: process the packet beforing sending it out
         fprint("received from %s" % in_intf)
+ 
+        # Packet is DNS message
+        if pkt.haslayer(DNS):
+            
+            # Packet is DNS query
+            if pkt[DNS].qr == 0:
+                
+                # Determine host
+                src_host = pkt[IP].src
+
+                # Determine query id
+                query_id = pkt[DNS].id
+                
+                # Add host and id to global dict
+                self.queries_lock.acquire()
+                self.queries[src_host].append(query_id)
+                self.queries_lock.release()
+
+            # Packet is DNS response
+            elif pkt[DNS].qr == 1:
+
+                # Determine host
+                dst_host = pkt[IP].dst
+                
+                # Determine query id
+                query_id = pkt[DNS].id
+
+                # If this is not a valid query, increment the count for its host
+                if query_id not in self.queries[dst_host]:
+                    self.counts_lock.acquire()
+                    self.counts[dst_host]++
+                    self.counts_lock.release()
 
             
-	    # Forwarding the traffic to the target network (DO NOT CHANGE)
+        # Forwarding the traffic to the target network (DO NOT CHANGE)
         sendp(pkt, iface=out_intf, verbose = 0)
 
     def sniff(self, in_intf, out_intf):
