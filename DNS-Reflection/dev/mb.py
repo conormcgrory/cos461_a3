@@ -29,7 +29,7 @@ class PacketHandler:
         self.counts_lock = threading.Lock()
 
         # Populate queries and counts dicts
-        for ip_list in ip_map.vals():
+        for ip_list in ip_map.values():
             for ip in ip_list:
                 self.queries[ip] = []
                 self.counts[ip] = 0
@@ -50,7 +50,40 @@ class PacketHandler:
         return res
 
 
+    def handle_dns_query(self, pkt):
+        
+        # Determine host
+        src_host = pkt[IP].src
+        
+        # Determine query id
+        query_id = pkt[DNS].id
+        
+        # Add host and id to global dict
+        self.queries_lock.acquire()
+        self.queries[src_host].append(query_id)
+        self.queries_lock.release()
+
+    
+    def handle_dns_reply(self, pkt):
+        
+        # Determine host
+        dst_host = pkt[IP].dst
+                
+        # Determine query id
+        query_id = pkt[DNS].id
+
+        # If this is not a valid query, increment the count for its host
+        if query_id not in self.queries[dst_host]:
+            self.counts_lock.acquire()
+            self.counts[dst_host] += 1
+            self.counts_lock.release()
+                    
+            # Print message if we have detected an attack (DEBUG)
+            fprint("DNS Reflection attack detected!!")
+
+
     def handle_packet(self, in_intf, out_intf, pkt):
+
         # Handling ARP (DO NOT CHANGE)
         if (pkt[Ether].dst == "ff:ff:ff:ff:ff:ff"): 
             if(pkt[Ether].type == 2054 and
@@ -70,39 +103,18 @@ class PacketHandler:
 	
         # TODO: process the packet beforing sending it out
         fprint("received from %s" % in_intf)
- 
+
         # Packet is DNS message
         if pkt.haslayer(DNS):
             
             # Packet is DNS query
             if pkt[DNS].qr == 0:
-                
-                # Determine host
-                src_host = pkt[IP].src
+                self.handle_dns_query(pkt)
 
-                # Determine query id
-                query_id = pkt[DNS].id
-                
-                # Add host and id to global dict
-                self.queries_lock.acquire()
-                self.queries[src_host].append(query_id)
-                self.queries_lock.release()
-
-            # Packet is DNS response
+            # Packet is DNS reply
             elif pkt[DNS].qr == 1:
-
-                # Determine host
-                dst_host = pkt[IP].dst
+                self.handle_dns_reply(pkt)
                 
-                # Determine query id
-                query_id = pkt[DNS].id
-
-                # If this is not a valid query, increment the count for its host
-                if query_id not in self.queries[dst_host]:
-                    self.counts_lock.acquire()
-                    self.counts[dst_host]++
-                    self.counts_lock.release()
-
             
         # Forwarding the traffic to the target network (DO NOT CHANGE)
         sendp(pkt, iface=out_intf, verbose = 0)
