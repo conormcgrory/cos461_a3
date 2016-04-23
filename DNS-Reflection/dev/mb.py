@@ -28,11 +28,18 @@ class PacketHandler:
         # Lock for counts dict
         self.counts_lock = threading.Lock()
 
-        # Populate queries and counts dicts
+        # Global dict mapping to keep track of attacked hosts
+        self.attacked = {}
+        
+        # Lock for attacked dict
+        self.attacked_lock = threading.Lock()
+
+        # Populate dicts with host names
         for ip_list in ip_map.values():
             for ip in ip_list:
                 self.queries[ip] = []
                 self.counts[ip] = 0
+                self.attacked[ip] = False
         
 		
     def start(self):
@@ -72,15 +79,33 @@ class PacketHandler:
         # Determine query id
         query_id = pkt[DNS].id
 
-        # If this is not a valid query, increment the count for its host
+        # If this is not a valid query, increment count and check for attack
         if query_id not in self.queries[dst_host]:
+
+            # Increment count 
             self.counts_lock.acquire()
             self.counts[dst_host] += 1
             self.counts_lock.release()
-                    
-            # Print message if we have detected an attack (DEBUG)
-            fprint("DNS Reflection attack detected!!")
+            
+            # Check for attack
+            if (self.counts[dst_host] > 200) and (self.attacked[dst_host] == False):
+                self.handle_attack(dst_host)
+                
 
+    def handle_attack(self, host):
+        
+        # Print message if we have detected an attack (DEBUG)
+        fprint('DNS Reflection attack detected!!')        
+        fprint('Host: {0}'.format(host))
+
+        # Mark host as attacked
+        self.attacked_lock.acquire()
+        self.attacked[host] = True
+        self.attacked_lock.release()
+
+        # Set rate limit here!!
+
+        
 
     def handle_packet(self, in_intf, out_intf, pkt):
 
