@@ -1,5 +1,6 @@
 import sys
 import threading
+from subprocess import call
 from scapy.all import sniff as scasniff, sendp
 from scapy.all import *
 
@@ -86,7 +87,7 @@ class PacketHandler:
             self.counts_lock.acquire()
             self.counts[dst_host] += 1
             self.counts_lock.release()
-            
+
             # Check for attack
             if (self.counts[dst_host] > 200) and (self.attacked[dst_host] == False):
                 self.handle_attack(dst_host)
@@ -94,7 +95,7 @@ class PacketHandler:
 
     def handle_attack(self, host):
         
-        # Print message if we have detected an attack (DEBUG)
+        # Print message if we have detected an attack (debugging)
         fprint('DNS Reflection attack detected!!')        
         fprint('Host: {0}'.format(host))
 
@@ -103,8 +104,25 @@ class PacketHandler:
         self.attacked[host] = True
         self.attacked_lock.release()
 
-        # Set rate limit here!!
+        ## Define commands -- we couldn't quite get these to work 
+        
+        # Command 1 should create the queueing discipline
+        #cmd_1 = ('tc qdisc add dev mb-eth0 root handle 1: '
+        #         'cbq avpkt 1000 bandwidth 10mbit')
 
+        # Command 2 should create the class with reduced rate
+        #cmd_2 = ('tc class add dev mb-eth0 parent 1: classid 1:1 cbq rate 512kbit'
+        #         'allot 1500 prio 5 bounded isolated')
+
+        # Command 3 should create that filter that matches only 
+        # Right now, it is just a catch-all filter we were using for debugging purposes
+        #cmd_3 = ('tc filter add dev mb-eth0 parent 1: protocol ip prio 16 u32'
+        #         'match u32 0 0 at 0 flowid 1:1')
+
+        # Call commands -- this should establish rate limiting
+        #call(cmd_1)
+        #call(cmd_2)
+        #call(cmd_3)
         
 
     def handle_packet(self, in_intf, out_intf, pkt):
